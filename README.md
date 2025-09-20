@@ -1,28 +1,4 @@
-# DFT-data-pipeline
-Framework for DFT data generation
-
-
-cp2k_pipeline/
-│── main.py              # entry point (parsing + workflow)
-│── utils.py             # helper functions (xyz, input writer, runners, etc.)
-│── config.py            # default settings, mineral-specific cells, functional maps
-│── init.py          # optional
-
 # CP2K Simulation System - Setup and Usage Guide
-
-## 📁 File Structure
-
-First, create a directory and save all the files:
-
-```bash
-mkdir cp2k_simulations
-cd cp2k_simulations
-```
-
-Save these files in your directory:
-- `cp2k_utils.py` - Utility functions (from artifact 1)
-- `cp2k_sim.py` - Main simulation script (from artifact 2) 
-- `cp2k_config.py` - Configuration module (from artifact 3)
 
 ## 🛠️ Prerequisites
 
@@ -86,27 +62,6 @@ python cp2k_sim.py CaCO3.xyz \
 - `--skip-nvt` - Skip NVT equilibration  
 - `--only-cellopt` - Only run cell optimization
 
-### Get Help
-```bash
-python cp2k_sim.py --help
-```
-
-## 📂 Example XYZ File Format
-
-Create a file called `SiO2.xyz`:
-```
-9
-Silicon dioxide unit cell
-Si    0.4701    0.0000    0.0000
-Si    0.0000    0.4701    0.6667
-Si    0.4701    0.4701    0.3333
-O     0.4139    0.2669    0.1188
-O     0.7331    0.4139    0.2146
-O     0.2669    0.7331    0.5479
-O     0.5861    0.9701    0.4521
-O     0.0299    0.5861    0.7854
-O     0.9701    0.0299    0.8812
-```
 
 ## 🎯 Step-by-Step Example
 
@@ -158,44 +113,6 @@ output_directory/
     └── 03_npt_PBE_D3_T300_P1.0/        # NPT production
 ```
 
-## 🔧 Troubleshooting
-
-### Common Issues:
-
-1. **CP2K not found**:
-   ```bash
-   # Load CP2K module (on clusters)
-   module load cp2k
-   
-   # Or set PATH manually
-   export PATH=/path/to/cp2k/exe:$PATH
-   ```
-
-2. **XYZ file not found**:
-   ```bash
-   # Make sure file exists and has correct format
-   ls -la *.xyz
-   head -5 your_mineral.xyz
-   ```
-
-3. **Permission errors**:
-   ```bash
-   # Make sure Python files are executable
-   chmod +x cp2k_sim.py
-   
-   # Check output directory permissions
-   mkdir -p results && ls -ld results/
-   ```
-
-4. **Import errors**:
-   ```bash
-   # Make sure all Python files are in same directory
-   ls -la cp2k_*.py
-   
-   # Run from the directory containing the scripts
-   python cp2k_sim.py --help
-   ```
-
 ## ⚡ Quick Start Commands
 
 ### For SiO2 (Quartz):
@@ -207,64 +124,3 @@ python cp2k_sim.py SiO2.xyz --temp 300 --output SiO2_ambient/
 ```bash
 python cp2k_sim.py CaCO3.xyz --temp 500 --pressure 5.0 --output CaCO3_heated/
 ```
-
-### High-Quality Run:
-```bash
-python cp2k_sim.py mineral.xyz \
-    --cutoff 800 \
-    --nvt-steps 10000 \
-    --npt-steps 50000 \
-    --output high_quality/
-```
-
-### Only Cell Optimization:
-```bash
-python cp2k_sim.py mineral.xyz --only-cellopt --output cellopt_only/
-```
-
-## 📈 Batch Processing Example
-
-Create a bash script (`run_batch.sh`):
-```bash
-#!/bin/bash
-
-# Temperature series
-for temp in 300 500 700 1000; do
-    python cp2k_sim.py SiO2.xyz --temp $temp --output SiO2_T${temp}/
-done
-
-# Pressure series  
-for pressure in 1 10 50 100; do
-    python cp2k_sim.py CaCO3.xyz --pressure $pressure --temp 300 --output CaCO3_P${pressure}/
-done
-```
-
-Run it:
-```bash
-chmod +x run_batch.sh
-./run_batch.sh
-```
-
-## 🔍 Monitoring Progress
-
-The script provides real-time feedback:
-```
-CP2K MINERAL SIMULATION PIPELINE
-============================================================
-Mineral: SiO2
-Temperature: 300.0 K
-Pressure: 1.0 bar
-Output directory: results
-Functional: PBE_D3
-============================================================
-Using CP2K executable: /usr/local/bin/cp2k.psmp
-Found XYZ file: SiO2.xyz
-
-==================================================
-STEP 1: CELL OPTIMIZATION
-==================================================
-Running Cell Optimization calculation in results/SiO2_T300.0_P1.0/01_cellopt_PBE_D3_T300_P1.0
-✓ Cell Optimization completed successfully in 0:05:23
-```
-
-That's it! You now have a complete, modular CP2K simulation system ready to use.
