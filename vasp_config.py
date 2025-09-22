@@ -30,7 +30,7 @@ DEFAULT_PARAMS = {
     'smass': 0,                 # Nose thermostat mass
     
     # K-point sampling
-    'kpts_grid': [6, 6, 6],     # Gamma-centered k-point grid
+    'kpts_grid': [1, 1, 1],     # Gamma-centered k-point grid
     'kpts_shift': [0.0, 0.0, 0.0],  # K-point shift
     
     # Exchange-correlation

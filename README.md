@@ -343,3 +343,9 @@ output_directory/
     │   └── previous_run/        # Backup (if continuing)
     └── ...
 ```
+
+## Post Processing of Output files
+
+```bash
+python outcar_to_xyz.py vasp_results -o xyz_outputs
+```

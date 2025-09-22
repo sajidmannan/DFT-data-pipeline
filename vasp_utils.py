@@ -15,6 +15,7 @@ import shutil
 import os
 from pathlib import Path
 from datetime import datetime
+from datetime import timedelta
 from typing import List, Dict, Tuple, Optional, Union
 import math
 
@@ -608,7 +609,9 @@ def create_simulation_summary(output_dir: Path, mineral_name: str,
         # Runtime information
         f.write("RUNTIME INFORMATION:\n")
         f.write("-"*25 + "\n")
-        total_runtime = sum([info['runtime'] for info in run_infos], datetime.timedelta())
+        # total_runtime = sum([info['runtime'] for info in run_infos], datetime.timedelta())
+        total_runtime = sum([info['runtime'] for info in run_infos], timedelta())
+
         f.write(f"Total Runtime: {total_runtime}\n")
         
         for info in run_infos:
