@@ -1,0 +1,41 @@
+VASP MINERAL SIMULATION SUMMARY
+==================================================
+
+SIMULATION PARAMETERS:
+-------------------------
+Mineral: Silicon Dioxide (Quartz)
+Formula: SiO2
+Template: scf
+Functional: PBE
+VdW Correction: None
+ENCUT: 520 eV
+K-points: 1×1×1
+Precision: Accurate
+Algorithm: Fast
+Simulation Date: 2025-09-22 10:53:14
+
+CALCULATION DIRECTORIES:
+-------------------------
+scf: scf_PBE
+
+RUNTIME INFORMATION:
+-------------------------
+Total Runtime: 0:01:35.428157
+scf: 0:01:35.428157 - ✓ SUCCESS - CONVERGED
+
+FINAL ENERGIES:
+-------------------------
+scf: -189.228070 eV
+
+OUTPUT FILES:
+-------------------------
+Each calculation directory contains:
+  - INCAR (input parameters)
+  - POSCAR (structure file)
+  - POTCAR (pseudopotential file)
+  - KPOINTS (k-point sampling)
+  - OUTCAR (detailed output)
+  - OSZICAR (convergence information)
+  - vasprun.xml (XML output)
+  - CONTCAR (final structure)
+  - run_info.txt (job information)

@@ -1,0 +1,25 @@
+VASP Calculation Information
+========================================
+
+Job Name: scf
+Mineral: SiO2
+Start Time: 2025-09-22 10:51:38.472070
+End Time: 2025-09-22 10:53:13.900227
+Runtime: 0:01:35.428157
+Success: True
+Converged: True
+Command: /home/soft/centOS/apps/licenseSoft/VASP/6.5.0/bin/vasp_std
+
+Final Energy: -189.228070 eV
+
+Simulation Parameters:
+--------------------
+Mineral: Silicon Dioxide (Quartz)
+Formula: SiO2
+Template: scf
+Functional: PBE
+VdW Correction: None
+ENCUT: 520 eV
+K-points: 1×1×1
+Precision: Accurate
+Algorithm: Fast

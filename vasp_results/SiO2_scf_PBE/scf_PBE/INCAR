@@ -1,0 +1,28 @@
+# VASP INCAR file generated automatically
+# Generated on: 2025-09-22 10:51:38
+
+# System
+--------
+SYSTEM       = Silicon Dioxide (Quartz) - scf
+
+# Electronic Structure
+----------------------
+ENCUT        = 520
+PREC         = Accurate
+ALGO         = Fast
+
+# Exchange-Correlation
+----------------------
+GGA          = PE
+
+# Ionic Relaxation
+------------------
+EDIFFG       = -0.01
+
+# Other Parameters
+------------------
+description  = Self-consistent field calculation
+ibrion       = -1
+nsw          = 0
+prec         = Accurate
+algo         = Fast

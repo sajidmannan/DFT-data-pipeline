@@ -1,0 +1,39 @@
+# VASP INCAR file generated automatically
+# Generated on: 2025-09-22 10:54:01
+
+# System
+--------
+SYSTEM       = Silicon Dioxide (Quartz) - md_nvt
+
+# Electronic Structure
+----------------------
+ENCUT        = 520
+PREC         = Accurate
+ALGO         = Fast
+
+# Exchange-Correlation
+----------------------
+GGA          = PE
+
+# Ionic Relaxation
+------------------
+EDIFFG       = -0.01
+NSW          = 1000
+
+# Molecular Dynamics
+--------------------
+TEBEG        = 300.0
+TEEND        = 300.0
+
+# Other Parameters
+------------------
+description  = NVT molecular dynamics
+ibrion       = 0
+nsw          = 5000
+potim        = 1.0
+mdalgo       = 2
+isif         = 2
+tebeg        = 300
+teend        = 300
+smass        = 0
+prec         = Normal
