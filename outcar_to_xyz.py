@@ -3,6 +3,7 @@ import os
 import argparse
 from ase.io import write
 from ase.io.vasp import read_vasp_out
+import numpy as np
 
 
 def outcar_to_xyz(outcar_path, xyz_out):

@@ -1,4 +1,4 @@
-# CP2K Simulation System - Setup and Usage Guide
+<!-- # CP2K Simulation System - Setup and Usage Guide
 
 ## 🛠️ Prerequisites
 
@@ -122,8 +122,289 @@ python cp2k_sim.py SiO2.xyz --temp 300 --output SiO2_ambient/
 
 ### For CaCO3 (Calcite):
 ```bash
-python cp2k_sim.py CaCO3.xyz --temp 500 --pressure 5.0 --output CaCO3_heated/
+python cp2k_sim.py CaCO3.xyz --temp 500 --pressure 5.0 --output CaCO3_heated/ -->
+<!-- ``` -->
+
+# CP2K Mineral Simulation Suite
+
+A comprehensive Python toolkit for running CP2K quantum chemistry calculations on mineral systems. This suite provides automated setup, execution, and analysis of geometry optimization, electronic structure, and molecular dynamics simulations.
+
+## Features
+
+- **Automated parameter setup** for common minerals (SiO2, CaCO3, MgO, etc.)
+- **Template-based calculations** (geometry optimization, single point, MD, etc.)
+- **Multiple exchange-correlation functionals** (PBE, PBE0, B3LYP, etc.)
+- **Van der Waals corrections** (D2, D3, D3BJ, TS)
+- **Parallel execution** with MPI support
+- **Comprehensive output analysis** and reporting
+- **Input validation** and error checking
+
+## Requirements
+
+### Software Dependencies
+- **CP2K** (version 6.0 or higher recommended)
+  - Compiled with MPI support for parallel calculations
+  - Built-in basis sets (BASIS_MOLOPT) and pseudopotentials (GTH_POTENTIALS)
+- **Python 3.7+**
+- **Standard Python libraries**: subprocess, pathlib, datetime, re, math
+
+### Optional Dependencies
+- **MPI** (OpenMPI, MPICH, Intel MPI) for parallel calculations
+- **Visualization tools**: VMD, OVITO, or similar for trajectory analysis
+
+## Installation
+
+1. **Clone or download the simulation suite:**
+   ```bash
+   git clone <repository-url>
+   cd cp2k-mineral-suite
+   ```
+
+2. **Ensure CP2K is accessible:**
+   ```bash
+   which cp2k.psmp  # or cp2k.popt, cp2k.ssmp, etc.
+   ```
+
+3. **Set environment variables (recommended):**
+   ```bash
+   export CP2K_DATA_DIR=/path/to/cp2k/data
+   export PATH=/path/to/cp2k/bin:$PATH
+   ```
+
+4. **Test the installation:**
+   ```bash
+   python cp2k_sim.py --list-minerals
+   ```
+
+## Quick Start
+
+### Basic Geometry Optimization
+```bash
+# Simple optimization with default PBE functional
+python cp2k_sim.py quartz.xyz --template opt --output results/
+
+# High-accuracy optimization with larger cutoff
+python cp2k_sim.py SiO2.xyz --template opt --cutoff 600 --functional PBE0
 ```
+
+### Cell Optimization
+```bash
+# Optimize both atomic positions and unit cell
+python cp2k_sim.py calcite.xyz --template cell_opt --pressure-tol 50
+```
+
+### Molecular Dynamics
+```bash
+# NVT molecular dynamics at 500K
+python cp2k_sim.py forsterite.xyz --template md --temp 500 --steps 5000
+
+# NPT simulation with pressure control
+python cp2k_sim.py MgO.xyz --template npt --temp 300 --pressure 10 --steps 10000
+```
+
+## File Structure
+
+```
+cp2k-mineral-suite/
+├── cp2k_config.py      # Configuration and parameter database
+├── cp2k_utils.py       # Utility functions and file handlers
+├── cp2k_sim.py         # Main simulation script
+├── README.md           # This file
+└── examples/           # Example structure files
+    ├── quartz.xyz
+    ├── calcite.xyz
+    └── mgo.xyz
+```
+
+
+<!-- python cp2k_main.py /home/civil/phd/cez218288/scratch/DFT-data-pipeline_sajid/SiO2.xyz --template cell_opt --pressure-tol 50
+
+python cp2k_sim.py calcite.xyz --template cell_opt --pressure-tol 50
+
+python cp2k_sim.py mineral.xyz --template cell_opt --pressure-tol 100
+
+
+ --functional PBE --cp2k-exe cp2k.sopt
+python cp2k_sim.py forsterite.xyz --template md --temp 300 --steps 50 --timestep 0.5 --thermostat CSVR --vdw D3 --rel-cutoff 40 --cutoff 500
+
+python cp2k_main.py /home/civil/phd/cez218288/scratch/DFT-data-pipeline_sajid/SiO2.xyz --template md --temp 500 --steps 5
+
+python cp2k_main.py /home/civil/phd/cez218288/scratch/DFT-data-pipeline_sajid/SiO2.xyz --template md --temp 300 --steps 50 --timestep 0.5 --thermostat CSVR --vdw D3 --rel-cutoff 40 --cutoff 500 -->
+
+## Usage Examples
+
+### 2. Basic Calculations
+
+#### Single Point Energy
+```bash
+python cp2k_sim.py mineral.xyz --template sp --functional PBE
+```
+
+#### Geometry Optimization
+```bash
+# Standard optimization
+python cp2k_sim.py mineral.xyz --template opt --max-iter 200
+
+# With van der Waals corrections
+python cp2k_sim.py layered_mineral.xyz --template opt --vdw D3
+
+# High-accuracy with hybrid functional
+python cp2k_sim.py mineral.xyz --template opt --functional PBE0 --cutoff 800
+```
+
+#### Cell Optimization
+```bash
+# Optimize cell and atomic positions
+python cp2k_sim.py mineral.xyz --template cell_opt --pressure-tol 100
+
+# Fixed pressure optimization
+python cp2k_sim.py mineral.xyz --template cell_opt --pressure 5000
+```
+
+### 3. Advanced Calculations
+
+#### Spin-Polarized Systems
+```bash
+# Enable unrestricted Kohn-Sham
+python cp2k_sim.py Fe2O3.xyz --template opt --uks --multiplicity 1
+
+# Magnetic systems
+python cp2k_sim.py hematite.xyz --template opt --uks --functional PBE
+```
+
+#### Molecular Dynamics
+```bash
+# Basic NVT simulation
+python cp2k_sim.py mineral.xyz --template md --temp 300 --steps 1000
+
+# NPT simulation with pressure control
+python cp2k_sim.py mineral.xyz --template npt --temp 500 --pressure 10 --steps 5000
+
+# Custom timestep and thermostat
+python cp2k_sim.py mineral.xyz --template md --timestep 0.5 --thermostat NOSE
+```
+
+#### Custom Basis Sets and Functionals
+```bash
+# Specify custom basis set
+python cp2k_sim.py mineral.xyz --template opt --basis TZVP-MOLOPT-GTH
+
+# Use B3LYP hybrid functional
+python cp2k_sim.py mineral.xyz --template sp --functional B3LYP --cutoff 600
+
+# Meta-GGA functional
+python cp2k_sim.py mineral.xyz --template opt --functional SCAN --cutoff 700
+```
+
+### 4. Parallel Execution
+```bash
+# Run with 4 MPI processes
+python cp2k_sim.py mineral.xyz --template opt --mpi 4
+
+# Large system with many cores
+python cp2k_sim.py big_mineral.xyz --template md --mpi 16 --steps 10000
+```
+
+### 5. Production Workflows
+```bash
+# High-accuracy geometry optimization
+python cp2k_sim.py quartz.xyz \
+    --template opt \
+    --functional PBE0 \
+    --cutoff 800 \
+    --rel-cutoff 60 \
+    --scf-eps 1E-8 \
+    --max-iter 300 \
+    --mpi 8 \
+    --output high_accuracy/
+
+# Finite temperature simulation
+python cp2k_sim.py mineral.xyz \
+    --template npt \
+    --temp 1000 \
+    --pressure 50 \
+    --steps 20000 \
+    --timestep 0.5 \
+    --vdw D3 \
+    --mpi 16 \
+    --output high_temp_study/
+```
+
+## Output Files
+
+Each calculation creates a directory containing:
+
+- **`input.inp`** - CP2K input file
+- **`geometry.xyz`** - Initial structure
+- **`*.out`** - CP2K output file
+- **`*.xyz`** - Trajectory files
+- **`*.ener`** - Energy evolution
+- **`*.restart`** - Restart files
+- **`run_info.txt`** - Job information and parameters
+- **`simulation_summary.txt`** - Comprehensive results summary
+
+## Command Line Options
+
+### Required Arguments
+- **`mineral`** - Mineral name or structure file path
+
+### Simulation Control
+- **`--template`** - Calculation type: opt, cell_opt, sp, md, npt, vib, band
+- **`--output`** - Output directory (default: cp2k_results)
+- **`--dry-run`** - Generate input files only
+- **`--continue-run`** - Continue from restart files
+
+### Electronic Structure
+- **`--functional`** - XC functional: PBE, PBE0, B3LYP, BLYP, BP86, LDA, SCAN
+- **`--cutoff`** - Plane wave cutoff in Ry
+- **`--rel-cutoff`** - Relative cutoff for Gaussian grid in Ry  
+- **`--scf-eps`** - SCF convergence criterion
+- **`--basis`** - Basis set type
+- **`--potential`** - Pseudopotential type
+- **`--vdw`** - Van der Waals correction: D2, D3, D3BJ, TS
+
+### Geometry Optimization
+- **`--max-iter`** - Maximum optimization steps
+- **`--optimizer`** - Optimizer: BFGS, CG, LBFGS
+- **`--cell-opt`** - Enable cell optimization
+- **`--pressure-tol`** - Pressure tolerance in bar
+
+### Molecular Dynamics
+- **`--temp`** - Temperature in Kelvin
+- **`--pressure`** - Pressure in bar
+- **`--steps`** - Number of MD steps
+- **`--timestep`** - Time step in fs
+- **`--ensemble`** - MD ensemble: NVT, NPT_I, NVE
+- **`--thermostat`** - Thermostat type: NOSE, CSVR, GLE
+
+### Magnetic Properties
+- **`--uks`** - Enable spin polarization
+- **`--multiplicity`** - Spin multiplicity (2S+1)
+
+### Parallelization
+- **`--mpi`** - Number of MPI processes
+
+## Predefined Minerals
+
+The suite includes optimized parameters for common minerals:
+
+| Mineral | Formula | Notes |
+|---------|---------|-------|
+| quartz, sio2 | SiO₂ | Alpha-quartz structure |
+| calcite, caco3 | CaCO₃ | Rhombohedral calcite |
+| periclase, mgo | MgO | Cubic rock salt structure |
+| forsterite, mg2sio4 | Mg₂SiO₄ | Olivine endmember |
+| corundum, al2o3 | Al₂O₃ | Hexagonal corundum |
+| hematite, fe2o3 | Fe₂O₃ | Antiferromagnetic hematite |
+
+Each mineral has optimized:
+- Cutoff energies
+- Basis sets and pseudopotentials
+- Convergence criteria
+- Special settings (e.g., spin polarization for Fe₂O₃)
+
+
+
 
 
 # VASP Simulation System - Setup and Usage Guide

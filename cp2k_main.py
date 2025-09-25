@@ -3,10 +3,10 @@
 CP2K Mineral Simulation Script
 
 A clean, command-line driven script for running CP2K simulations on minerals.
-Performs cell optimization, NVT equilibration, and NPT production runs.
+Performs geometry optimization, electronic structure calculations, and molecular dynamics.
 
 Usage:
-    python cp2k_sim.py mineral_name --temp 300 --pressure 1.0 --output results/
+    python cp2k_sim.py mineral_name --template opt --functional PBE --output results/
 """
 
 import argparse
@@ -17,16 +17,25 @@ from pathlib import Path
 # Import our utility functions
 from cp2k_utils import (
     # System utilities
-    detect_cp2k, find_xyz_file, clean_xyz_file, parse_cell_parameters,
+    detect_cp2k, detect_cp2k_data, find_structure_file, parse_xyz_file, 
+    parse_poscar_to_xyz, write_xyz_file,
     
-    # CP2K generators
-    generate_motion_block, create_cp2k_input,
+    # File generators
+    create_cp2k_input,
     
     # Job execution
-    run_cp2k_calculation, write_run_info, find_optimized_structure,
+    run_cp2k_calculation, backup_previous_calculation, copy_structure_files,
+    write_run_info, validate_cp2k_input,
     
     # Reporting
     create_simulation_summary, print_completion_message
+)
+
+from cp2k_config import (
+    get_mineral_info, get_recommended_cutoff, get_basis_sets, get_pseudopotentials,
+    get_functional_info, get_vdw_info, get_simulation_template,
+    DEFAULT_PARAMS, list_available_minerals, list_available_functionals,
+    list_simulation_templates, list_available_basis_sets
 )
 
 # ================================================================
@@ -36,87 +45,187 @@ from cp2k_utils import (
 def parse_arguments():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(
-        description="Run CP2K simulations for minerals with cell optimization, NVT equilibration, and NPT production runs.",
+        description="Run CP2K simulations for minerals with geometry optimization, electronic structure, and MD capabilities.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python cp2k_sim.py SiO2 --temp 300 --pressure 1.0 --output results/
-  python cp2k_sim.py quartz.xyz --temp 500 --pressure 2.5 --output /path/to/results
-  python cp2k_sim.py CaCO3 --temp 300 --pressure 1.0 --functional PBE_D3 --cutoff 800
+  python cp2k_sim.py SiO2.xyz --template opt --output results/
+  python cp2k_sim.py quartz --functional PBE0 --cutoff 600 --output high_accuracy/
+  python cp2k_sim.py CaCO3 --template md --temp 500 --steps 5000
+  python cp2k_sim.py mineral.xyz --template sp --basis TZVP-MOLOPT-GTH --functional B3LYP
 
-Supported minerals with auto cell parameters:
-  SiO2, quartz, CaCO3, calcite, Mg2SiO4, forsterite, Al2O3, corundum, Fe2O3, hematite
+Available templates: opt, cell_opt, sp, md, npt, vib, band
+
+Supported minerals with auto parameters:
+  SiO2, quartz, CaCO3, calcite, MgO, periclase, Mg2SiO4, forsterite, 
+  Al2O3, corundum, Fe2O3, hematite
         """
     )
     
     # Required arguments
     parser.add_argument("mineral", 
-                       help="Mineral name or path to XYZ file")
+                       help="Mineral name or path to structure file (XYZ, POSCAR)")
     
-    # Thermodynamic conditions
-    parser.add_argument("--temp", "-T", 
-                       type=float, default=300.0,
-                       help="Temperature in Kelvin (default: 300.0)")
-    
-    parser.add_argument("--pressure", "-P", 
-                       type=float, default=1.0,
-                       help="Pressure in bar (default: 1.0)")
+    # Calculation type
+    parser.add_argument("--template", "-t",
+                       type=str, default="opt",
+                       choices=["opt", "cell_opt", "sp", "md", "npt", "vib", "band"],
+                       help="Simulation template (default: opt)")
     
     # Output settings
-    parser.add_argument("--output", "-o", 
+    parser.add_argument("--output", "-o",
                        type=str, default="cp2k_results",
                        help="Output directory path (default: cp2k_results)")
     
-    # DFT settings
-    parser.add_argument("--functional", 
-                       type=str, default="PBE_D3",
-                       choices=["PBE", "PBE_D3", "BLYP", "BLYP_D3", "PBE0"],
-                       help="Exchange-correlation functional (default: PBE_D3)")
+    # Electronic structure settings
+    parser.add_argument("--functional",
+                       type=str, default="PBE",
+                       choices=["PBE", "PBE0", "B3LYP", "BLYP", "BP86", "LDA", "SCAN"],
+                       help="Exchange-correlation functional (default: PBE)")
     
-    parser.add_argument("--cutoff", 
-                       type=int, default=600,
-                       help="Plane wave cutoff in Ry (default: 600)")
+    parser.add_argument("--cutoff",
+                       type=int, default=None,
+                       help="Plane wave cutoff in Ry (default: auto from elements)")
     
-    parser.add_argument("--rel-cutoff", 
-                       type=int, default=40,
-                       help="Relative cutoff in Ry (default: 40)")
+    parser.add_argument("--rel-cutoff",
+                       type=int, default=50,
+                       help="Relative cutoff for Gaussian grid in Ry (default: 50)")
     
-    # MD settings
-    parser.add_argument("--nvt-steps", 
-                       type=int, default=5000,
-                       help="Number of NVT equilibration steps (default: 5000)")
+    parser.add_argument("--scf-eps",
+                       type=float, default=1E-6,
+                       help="SCF convergence criterion (default: 1E-6)")
     
-    parser.add_argument("--npt-steps", 
-                       type=int, default=10000,
-                       help="Number of NPT production steps (default: 10000)")
+    parser.add_argument("--scf-guess",
+                       type=str, default="ATOMIC",
+                       choices=["ATOMIC", "RANDOM", "RESTART"],
+                       help="SCF initial guess (default: ATOMIC)")
     
-    parser.add_argument("--timecon", 
+    # Basis sets and pseudopotentials
+    parser.add_argument("--basis",
+                       type=str, default=None,
+                       help="Basis set type (default: DZVP-MOLOPT-SR-GTH)")
+    
+    parser.add_argument("--potential",
+                       type=str, default=None,
+                       help="Pseudopotential type (default: GTH-PBE)")
+    
+    # Geometry optimization
+    parser.add_argument("--max-iter",
+                       type=int, default=200,
+                       help="Maximum optimization iterations (default: 200)")
+    
+    parser.add_argument("--optimizer",
+                       type=str, default="BFGS",
+                       choices=["BFGS", "CG", "LBFGS"],
+                       help="Geometry optimizer (default: BFGS)")
+    
+    parser.add_argument("--cell-opt",
+                       action="store_true",
+                       help="Enable cell optimization")
+    
+    parser.add_argument("--pressure-tol",
                        type=float, default=100.0,
-                       help="Thermostat time constant in fs (default: 100.0)")
+                       help="Pressure tolerance for cell opt in bar (default: 100)")
     
-    # Cell parameters
-    parser.add_argument("--cell", 
-                       type=str, default="auto",
-                       help="Cell parameters 'a b c' or 'auto' for defaults (default: auto)")
+    # Molecular dynamics
+    parser.add_argument("--temp",
+                       type=float, default=300.0,
+                       help="Temperature for MD in Kelvin (default: 300.0)")
+    
+    parser.add_argument("--pressure",
+                       type=float, default=1.0,
+                       help="External pressure in bar for NPT (default: 1.0)")
+    
+    parser.add_argument("--steps",
+                       type=int, default=1000,
+                       help="Number of MD steps (default: 1000)")
+    
+    parser.add_argument("--timestep",
+                       type=float, default=0.5,
+                       help="MD timestep in fs (default: 0.5)")
+    
+    parser.add_argument("--ensemble",
+                       type=str, default="NVT",
+                       choices=["NVT", "NPT_I", "NVE"],
+                       help="MD ensemble (default: NVT)")
+    
+    parser.add_argument("--thermostat",
+                       type=str, default="NOSE",
+                       choices=["NOSE", "CSVR", "GLE"],
+                       help="Thermostat type (default: NOSE)")
+    
+    # Van der Waals corrections
+    parser.add_argument("--vdw",
+                       type=str, default=None,
+                       choices=["D2", "D3", "D3BJ", "TS"],
+                       help="Van der Waals correction method")
+    
+    # Magnetic properties
+    parser.add_argument("--uks",
+                       action="store_true",
+                       help="Enable unrestricted Kohn-Sham (spin polarization)")
+    
+    parser.add_argument("--multiplicity",
+                       type=int, default=None,
+                       help="Spin multiplicity (2S+1)")
+    
+    # Parallelization
+    parser.add_argument("--mpi",
+                       type=int, default=1,
+                       help="Number of MPI ranks (default: 1)")
     
     # Job control
-    parser.add_argument("--skip-cellopt", 
+    parser.add_argument("--dry-run",
                        action="store_true",
-                       help="Skip cell optimization (use initial structure)")
+                       help="Generate input files only, don't run CP2K")
     
-    parser.add_argument("--skip-nvt", 
+    parser.add_argument("--continue-run",
                        action="store_true",
-                       help="Skip NVT equilibration")
+                       help="Continue previous calculation from restart file")
     
-    parser.add_argument("--only-cellopt", 
+    # Utility options
+    parser.add_argument("--list-minerals",
                        action="store_true",
-                       help="Only run cell optimization")
+                       help="List available minerals and exit")
+    
+    parser.add_argument("--list-functionals",
+                       action="store_true",
+                       help="List available functionals and exit")
+    
+    parser.add_argument("--list-templates",
+                       action="store_true",
+                       help="List available templates and exit")
+    
+    parser.add_argument("--list-basis",
+                       action="store_true",
+                       help="List available basis sets and exit")
+
+    parser.add_argument("--cp2k-exe", default="cp2k.psmp",
+                    help="Path or name of CP2K executable (default: cp2k.psmp)")
     
     return parser.parse_args()
 
 # ================================================================
 # Job Setup Functions
 # ================================================================
+
+def handle_utility_options(args):
+    """Handle utility options like listing minerals, functionals, etc."""
+    if args.list_minerals:
+        list_available_minerals()
+        sys.exit(0)
+    
+    if args.list_functionals:
+        list_available_functionals()
+        sys.exit(0)
+    
+    if args.list_templates:
+        list_simulation_templates()
+        sys.exit(0)
+    
+    if args.list_basis:
+        list_available_basis_sets()
+        sys.exit(0)
 
 def setup_simulation(args):
     """Setup simulation environment and return configuration"""
@@ -126,80 +235,224 @@ def setup_simulation(args):
     print("CP2K MINERAL SIMULATION PIPELINE")
     print("="*60)
     print(f"Mineral: {args.mineral}")
-    print(f"Temperature: {args.temp} K")
-    print(f"Pressure: {args.pressure} bar")
-    print(f"Output directory: {args.output}")
+    print(f"Template: {args.template}")
     print(f"Functional: {args.functional}")
+    print(f"Output directory: {args.output}")
     print("="*60)
     
-    # Detect CP2K and find XYZ file
+    # Detect CP2K and data directory
     cp2k_cmd = detect_cp2k()
-    original_xyz = find_xyz_file(args.mineral)
-    mineral_name = Path(original_xyz).stem
+    try:
+        data_dir = detect_cp2k_data()
+        print(f"Using CP2K data directory: {data_dir}")
+    except FileNotFoundError as e:
+        print(f"Warning: {e}")
+        data_dir = None
     
     print(f"Using CP2K executable: {cp2k_cmd}")
-    print(f"Found XYZ file: {original_xyz}")
     
-    # Create output directory structure
-    output_dir = Path(args.output) / f"{mineral_name}_T{args.temp}_P{args.pressure}"
+    # Find and parse structure file
+    structure_file = find_structure_file(args.mineral)
+    mineral_name = Path(args.mineral).stem
+    
+    print(f"Found structure file: {structure_file}")
+    
+    # Parse structure based on file type
+    if structure_file.suffix.lower() in ['.xyz']:
+        structure = parse_xyz_file(structure_file)
+    elif structure_file.name in ['POSCAR', 'CONTCAR'] or 'POSCAR' in structure_file.name:
+        structure = parse_poscar_to_xyz(structure_file)
+    else:
+        # Try to parse as XYZ first
+        try:
+            structure = parse_xyz_file(structure_file)
+        except:
+            try:
+                structure = parse_poscar_to_xyz(structure_file)
+            except:
+                raise ValueError(f"Unable to parse structure file: {structure_file}")
+    
+    print(f"Structure: {structure['n_atoms']} atoms, "
+          f"Elements: {' '.join(structure['unique_elements'])}")
+    
+    # Create output directory
+    output_dir = Path(args.output) / f"{mineral_name}_{args.template}_{args.functional}"
     output_dir.mkdir(exist_ok=True, parents=True)
     
-    # Prepare coordinate file
-    cleaned_xyz = output_dir / "coords.xyz"
-    clean_xyz_file(original_xyz, cleaned_xyz)
-    shutil.copy2(original_xyz, output_dir / f"original_{original_xyz.name}")
+    # Get mineral information and recommendations
+    mineral_info = get_mineral_info(mineral_name)
+    elements = structure['unique_elements']
     
-    print(f"Prepared coordinate file: {cleaned_xyz}")
+    print(f"Elements: {elements}")
     
-    # Parse cell parameters
-    cell_params = parse_cell_parameters(args.cell, mineral_name)
-    
-    # Create simulation parameters dictionary
-    sim_params = {
-        'Mineral': mineral_name,
-        'Temperature': f"{args.temp} K",
-        'Pressure': f"{args.pressure} bar",
-        'Functional': args.functional,
-        'Cutoff': f"{args.cutoff} Ry",
-        'Relative Cutoff': f"{args.rel_cutoff} Ry",
-        'NVT Steps': args.nvt_steps,
-        'NPT Steps': args.npt_steps,
-        'Thermostat Time Constant': f"{args.timecon} fs",
-        'Cell Parameters': f"{cell_params[0]:.3f} {cell_params[1]:.3f} {cell_params[2]:.3f}"
-    }
+    # Setup simulation parameters
+    sim_params = create_simulation_parameters(args, mineral_info, elements, structure)
     
     return {
         'cp2k_cmd': cp2k_cmd,
-        'original_xyz': original_xyz,
+        'data_dir': data_dir,
+        'structure_file': structure_file,
+        'structure': structure,
         'mineral_name': mineral_name,
         'output_dir': output_dir,
-        'cleaned_xyz': cleaned_xyz,
-        'cell_params': cell_params,
+        'mineral_info': mineral_info,
+        'elements': elements,
         'sim_params': sim_params
     }
 
-def create_job_directory(output_dir: Path, job_name: str, coords_xyz: Path, 
-                        mineral_name: str, run_type: str, args, cell_params, 
-                        motion_section: str):
-    """Create and setup a job directory"""
+def create_simulation_parameters(args, mineral_info, elements, structure):
+    """Create simulation parameters dictionary"""
+    
+    # Start with template parameters
+    template_params = get_simulation_template(args.template)
+    
+    # Get recommended cutoff
+    recommended_cutoff = get_recommended_cutoff(elements)
+    cutoff = args.cutoff if args.cutoff else recommended_cutoff
+    
+    # Get functional info
+    functional_info = get_functional_info(args.functional)
+    
+    # Get VdW info if specified
+    vdw_info = get_vdw_info(args.vdw) if args.vdw else {}
+    
+    # Get basis sets and pseudopotentials
+    mineral_basis_sets = get_basis_sets(args.mineral)
+    mineral_pseudopotentials = get_pseudopotentials(args.mineral)
+    
+    # Override with user-specified or mineral-specific values
+    basis_sets = {}
+    pseudopotentials = {}
+    
+    for element in elements:
+        # Basis set
+        if args.basis:
+            basis_sets[element] = args.basis
+        elif element in mineral_basis_sets:
+            basis_sets[element] = mineral_basis_sets[element]
+        else:
+            basis_sets[element] = DEFAULT_PARAMS['basis_set_type']
+        
+        # Pseudopotential
+        if args.potential:
+            pseudopotentials[element] = args.potential
+        elif element in mineral_pseudopotentials:
+            pseudopotentials[element] = mineral_pseudopotentials[element]
+        else:
+            functional_name = args.functional.upper()
+            pseudopotentials[element] = f"GTH-{functional_name}"
+    
+    # Merge all parameters
+    params = {}
+    params.update(template_params)  # Template base
+    
+    # Override with user-specified parameters
+    params.update({
+        'project_name': f"{mineral_info['name'].replace(' ', '_').replace('(', '').replace(')', '')}_{args.template}",
+        'cutoff': cutoff,
+        'rel_cutoff': args.rel_cutoff,
+        'scf_eps': args.scf_eps,
+        'scf_guess': args.scf_guess,
+        'xc_functional': args.functional,
+        'basis_sets': basis_sets,
+        'pseudopotentials': pseudopotentials,
+    })
+    
+    # Add optional parameters
+    if args.max_iter:
+        params['geo_max_iter'] = args.max_iter
+    
+    if args.optimizer:
+        params['optimizer'] = args.optimizer
+    
+    if args.cell_opt or args.template == 'cell_opt':
+        params['cell_opt'] = True
+        params['pressure_tolerance'] = args.pressure_tol
+    
+    if args.uks:
+        params['uks'] = True
+        if args.multiplicity:
+            params['multiplicity'] = args.multiplicity
+    
+    if args.template in ['md', 'npt']:
+        params['md_temperature'] = args.temp
+        params['md_steps'] = args.steps
+        params['md_timestep'] = args.timestep
+        params['md_ensemble'] = args.ensemble
+        params['thermostat'] = args.thermostat
+        
+        if args.template == 'npt' or args.ensemble == 'NPT_I':
+            params['md_pressure'] = args.pressure
+    
+    if args.vdw:
+        params['vdw_potential'] = args.vdw
+    
+    # Create simulation info dictionary
+    sim_info = {
+        'Mineral': mineral_info['name'],
+        'Formula': mineral_info.get('formula', 'Unknown'),
+        'Template': args.template,
+        'Functional': args.functional,
+        'VdW Correction': args.vdw or 'None',
+        'Cutoff': f"{cutoff} Ry",
+        'Rel Cutoff': f"{args.rel_cutoff} Ry",
+        'Basis Set': args.basis or 'Auto',
+        'Pseudopotential': args.potential or 'Auto',
+        'SCF Convergence': f"{args.scf_eps:.0E}",
+    }
+    
+    if args.template in ['md', 'npt']:
+        sim_info['Temperature'] = f"{args.temp} K"
+        sim_info['MD Steps'] = str(args.steps)
+        sim_info['Timestep'] = f"{args.timestep} fs"
+        if args.template == 'npt' or args.ensemble == 'NPT_I':
+            sim_info['Pressure'] = f"{args.pressure} bar"
+    
+    if args.cell_opt or args.template == 'cell_opt':
+        sim_info['Cell Optimization'] = 'Enabled'
+        sim_info['Pressure Tolerance'] = f"{args.pressure_tol} bar"
+    
+    return {
+        'cp2k_params': params,
+        'sim_info': sim_info
+    }
+
+def create_job_directory(output_dir: Path, job_name: str, setup_config: dict, args):
+    """Create and setup a job directory with all CP2K input files"""
     
     job_dir = output_dir / job_name
-    job_dir.mkdir(exist_ok=True, parents=True)
+    job_dir.mkdir(exist_ok=True)
     
-    # Copy coordinate file
-    shutil.copy2(coords_xyz, job_dir / "coords.xyz")
+    # Backup previous calculation if continuing
+    if args.continue_run:
+        backup_previous_calculation(job_dir)
     
-    # Create CP2K input file
-    create_cp2k_input(
-        run_type=run_type,
-        mineral_name=mineral_name,
-        dir_path=job_dir,
-        functional=args.functional,
-        cutoff=args.cutoff,
-        rel_cutoff=args.rel_cutoff,
-        cell_params=cell_params,
-        motion_section=motion_section
-    )
+    # Copy structure file or use restart geometry if continuing
+    if args.continue_run:
+        restart_files = list(job_dir.glob("*-pos-1.xyz"))
+        if restart_files:
+            latest_restart = sorted(restart_files)[-1]
+            restart_structure = parse_xyz_file(latest_restart)
+            write_xyz_file(restart_structure, job_dir / "geometry.xyz")
+            print("Using restart geometry as starting structure")
+        else:
+            write_xyz_file(setup_config['structure'], job_dir / "geometry.xyz")
+    else:
+        write_xyz_file(setup_config['structure'], job_dir / "geometry.xyz")
+    
+    # Generate CP2K input file
+    cp2k_params = setup_config['sim_params']['cp2k_params']
+    create_cp2k_input(cp2k_params, setup_config['structure'], job_dir / "input.inp")
+    print(f"Generated input.inp with cutoff {cp2k_params['cutoff']} Ry")
+    
+    # Validate input file
+    issues = validate_cp2k_input(job_dir / "input.inp")
+    if issues:
+        print("Warning: Input file validation issues:")
+        for issue in issues:
+            print(f"  - {issue}")
+    else:
+        print("Input file validation: OK")
     
     return job_dir
 
@@ -207,179 +460,85 @@ def create_job_directory(output_dir: Path, job_name: str, coords_xyz: Path,
 # Main Simulation Workflow
 # ================================================================
 
-def run_cell_optimization(setup_config, args):
-    """Run cell optimization step"""
+def run_cp2k_job(setup_config: dict, args) -> tuple:
+    """Run main CP2K calculation"""
     
-    print("\n" + "="*50)
-    print("STEP 1: CELL OPTIMIZATION")
-    print("="*50)
+    job_name = f"{args.template}_{args.functional}"
+    if args.vdw:
+        job_name += f"_{args.vdw}"
     
-    motion_section = generate_motion_block("CELL_OPT")
-    job_name = f"01_cellopt_{args.functional}_T{args.temp}_P{args.pressure}"
+    print(f"\n{'='*50}")
+    print(f"RUNNING {args.template.upper()} CALCULATION")
+    print(f"{'='*50}")
     
-    job_dir = create_job_directory(
-        output_dir=setup_config['output_dir'],
-        job_name=job_name,
-        coords_xyz=setup_config['cleaned_xyz'],
-        mineral_name=setup_config['mineral_name'],
-        run_type="CELL_OPT",
-        args=args,
-        cell_params=setup_config['cell_params'],
-        motion_section=motion_section
+    # Create job directory and input files
+    job_dir = create_job_directory(setup_config['output_dir'], job_name, 
+                                  setup_config, args)
+    
+    if args.dry_run:
+        print(f"Dry run: Input files generated in {job_dir}")
+        print("Skipping CP2K execution")
+        return job_dir, {
+            'job_name': args.template,
+            'success': True,
+            'converged': None,
+            'runtime': None
+        }
+    
+    # Run CP2K calculation
+    run_info = run_cp2k_calculation(
+        job_name=args.template,
+        job_dir=job_dir,
+        cp2k_cmd=setup_config['cp2k_cmd'],
+        mpi_ranks=args.mpi
     )
     
-    # Run calculation
-    run_info = run_cp2k_calculation("Cell Optimization", job_dir, setup_config['cp2k_cmd'])
-    
-    # Write run info
+    # Write run information
     write_run_info(job_dir, run_info, setup_config['mineral_name'], 
-                  args.temp, args.pressure, args.functional, args.cutoff)
+                  setup_config['sim_params']['sim_info'])
     
     if not run_info['success']:
-        raise RuntimeError("Cell optimization failed")
-    
-    return job_dir, run_info
-
-def run_nvt_equilibration(setup_config, args, input_structure):
-    """Run NVT equilibration step"""
-    
-    print("\n" + "="*50)
-    print("STEP 2: NVT EQUILIBRATION")
-    print("="*50)
-    
-    motion_section = generate_motion_block(
-        "NVT",
-        temperature=args.temp,
-        steps=args.nvt_steps,
-        timecon=args.timecon
-    )
-    
-    job_name = f"02_nvt_{args.functional}_T{args.temp}_P{args.pressure}"
-    
-    job_dir = create_job_directory(
-        output_dir=setup_config['output_dir'],
-        job_name=job_name,
-        coords_xyz=input_structure,
-        mineral_name=setup_config['mineral_name'],
-        run_type="MD",
-        args=args,
-        cell_params=setup_config['cell_params'],
-        motion_section=motion_section
-    )
-    
-    # Run calculation
-    run_info = run_cp2k_calculation("NVT Equilibration", job_dir, setup_config['cp2k_cmd'])
-    
-    # Write run info
-    write_run_info(job_dir, run_info, setup_config['mineral_name'], 
-                  args.temp, args.pressure, args.functional, args.cutoff)
-    
-    if not run_info['success']:
-        raise RuntimeError("NVT equilibration failed")
-    
-    return job_dir, run_info
-
-def run_npt_production(setup_config, args, input_structure):
-    """Run NPT production step"""
-    
-    print("\n" + "="*50)
-    print("STEP 3: NPT PRODUCTION")
-    print("="*50)
-    
-    motion_section = generate_motion_block(
-        "NPT",
-        temperature=args.temp,
-        pressure=args.pressure,
-        steps=args.npt_steps,
-        timecon=args.timecon
-    )
-    
-    job_name = f"03_npt_{args.functional}_T{args.temp}_P{args.pressure}"
-    
-    job_dir = create_job_directory(
-        output_dir=setup_config['output_dir'],
-        job_name=job_name,
-        coords_xyz=input_structure,
-        mineral_name=setup_config['mineral_name'],
-        run_type="MD",
-        args=args,
-        cell_params=setup_config['cell_params'],
-        motion_section=motion_section
-    )
-    
-    # Run calculation
-    run_info = run_cp2k_calculation("NPT Production", job_dir, setup_config['cp2k_cmd'])
-    
-    # Write run info
-    write_run_info(job_dir, run_info, setup_config['mineral_name'], 
-                  args.temp, args.pressure, args.functional, args.cutoff)
-    
-    if not run_info['success']:
-        raise RuntimeError("NPT production failed")
+        raise RuntimeError(f"{args.template} calculation failed")
     
     return job_dir, run_info
 
 def main():
     """Main simulation workflow"""
     
-    # Parse arguments and setup simulation
+    # Parse arguments
     args = parse_arguments()
+    
+    # Handle utility options
+    handle_utility_options(args)
     
     try:
         # Setup simulation environment
         setup_config = setup_simulation(args)
         
-        # Initialize tracking variables
-        run_infos = []
-        job_dirs = {}
-        current_structure = setup_config['cleaned_xyz']
+        # Run main calculation
+        job_dir, run_info = run_cp2k_job(setup_config, args)
         
-        # Step 1: Cell Optimization (unless skipped)
-        if not args.skip_cellopt:
-            cellopt_dir, cellopt_info = run_cell_optimization(setup_config, args)
-            run_infos.append(cellopt_info)
-            job_dirs['Cell Optimization'] = cellopt_dir
-            
-            # Find optimized structure for next step
-            current_structure = find_optimized_structure(
-                cellopt_dir, 
-                setup_config['mineral_name'], 
-                args.functional, 
-                setup_config['cleaned_xyz']
+        # Create summary
+        job_dirs = {args.template: job_dir}
+        run_infos = [run_info]
+        
+        if not args.dry_run:
+            create_simulation_summary(
+                output_dir=setup_config['output_dir'],
+                mineral_name=setup_config['mineral_name'],
+                simulation_params=setup_config['sim_params']['sim_info'],
+                job_dirs=job_dirs,
+                run_infos=run_infos
             )
-            
-            if args.only_cellopt:
-                print("\n" + "="*60)
-                print("🎉 CELL OPTIMIZATION COMPLETED!")
-                print("="*60)
-                print(f"Results saved to: {setup_config['output_dir']}")
-                return
-        
-        # Step 2: NVT Equilibration (unless skipped)
-        if not args.skip_nvt:
-            nvt_dir, nvt_info = run_nvt_equilibration(setup_config, args, current_structure)
-            run_infos.append(nvt_info)
-            job_dirs['NVT Equilibration'] = nvt_dir
-            
-            # Update structure for NPT (use same optimized structure)
-            # In practice, you might want to use the final NVT structure
-        
-        # Step 3: NPT Production
-        npt_dir, npt_info = run_npt_production(setup_config, args, current_structure)
-        run_infos.append(npt_info)
-        job_dirs['NPT Production'] = npt_dir
-        
-        # Create comprehensive summary
-        create_simulation_summary(
-            output_dir=setup_config['output_dir'],
-            mineral_name=setup_config['mineral_name'],
-            simulation_params=setup_config['sim_params'],
-            job_dirs=job_dirs,
-            run_infos=run_infos
-        )
         
         # Print completion message
-        print_completion_message(setup_config['output_dir'], run_infos)
+        if args.dry_run:
+            print(f"\n{'='*60}")
+            print("📁 INPUT FILES GENERATED SUCCESSFULLY!")
+            print(f"{'='*60}")
+            print(f"Files created in: {setup_config['output_dir']}")
+        else:
+            print_completion_message(setup_config['output_dir'], run_infos)
         
     except KeyboardInterrupt:
         print("\n\n⚠️  Simulation interrupted by user")
